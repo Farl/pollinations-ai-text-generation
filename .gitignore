@@ -21,3 +21,6 @@ npm-debug.log*
 
 # Runtime
 node_modules/
+
+# Build directory
+_site/
