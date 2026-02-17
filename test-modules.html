@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Module Testing</title>
+  <script src="config.js"></script>
+</head>
+<body>
+  <h1>Testing Refactored Modules</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    const output = document.getElementById('output');
+    const log = (msg, type = 'info') => {
+      const div = document.createElement('div');
+      div.style.padding = '10px';
+      div.style.margin = '5px';
+      div.style.backgroundColor = type === 'pass' ? '#d4edda' : type === 'fail' ? '#f8d7da' : '#d1ecf1';
+      div.textContent = msg;
+      output.appendChild(div);
+      console.log(msg);
+    };
+
+    async function runTests() {
+      log('=== Starting Module Tests ===', 'info');
+
+      // Test 1: Import modules
+      try {
+        const API = await import('./src/services/pollinations-api.js');
+        const Config = await import('./src/utils/config.js');
+        const Helpers = await import('./src/utils/helpers.js');
+        const Constants = await import('./src/utils/constants.js');
+        log('✓ All modules imported successfully', 'pass');
+
+        // Test 2: Config functions
+        const config = Config.getConfig();
+        log(`✓ Config loaded: API_KEY=${config.API_KEY ? 'present' : 'missing'}`, 'pass');
+
+        // Test 3: Helper functions
+        const seed = Helpers.generateSeed();
+        log(`✓ generateSeed: ${seed}`, 'pass');
+
+        const fileSize = Helpers.formatFileSize(1048576);
+        log(`✓ formatFileSize(1MB): ${fileSize}`, 'pass');
+
+        // Test 4: Constants
+        log(`✓ API.BASE_URL: ${Constants.default.API.BASE_URL}`, 'pass');
+
+        // Test 5: API call (if API key available)
+        if (config.API_KEY) {
+          log('Testing API call with key...', 'info');
+          const models = await API.fetchModels(config.API_KEY);
+          log(`✓ fetchModels returned ${models.length} models`, 'pass');
+          log(`  First model: ${models[0]?.name}`, 'info');
+        } else {
+          log('⚠ No API key - skipping API tests', 'info');
+        }
+
+        log('=== All Tests Passed ===', 'pass');
+      } catch (error) {
+        log(`✗ Test failed: ${error.message}`, 'fail');
+        console.error(error);
+      }
+    }
+
+    runTests();
+  </script>
+</body>
+</html>

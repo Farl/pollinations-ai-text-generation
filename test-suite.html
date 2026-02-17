@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Automated Test Suite</title>
+  <script src="config.js"></script>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .test-section { margin: 20px 0; padding: 15px; border: 1px solid #444; border-radius: 5px; }
+    .test-item { padding: 8px; margin: 5px 0; border-radius: 3px; }
+    .pass { background: #1e4620; color: #4ec9b0; }
+    .fail { background: #5a1d1d; color: #f48771; }
+    .running { background: #1e3a5f; color: #9cdcfe; }
+    .info { background: #2d2d30; color: #dcdcaa; }
+    .summary { font-size: 18px; font-weight: bold; margin: 20px 0; }
+    pre { background: #252526; padding: 10px; border-radius: 3px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Pollinations AI - Automated Test Suite</h1>
+  <div id="summary"></div>
+  <div id="results"></div>
+
+  <script type="module">
+    // Test framework
+    class TestRunner {
+      constructor() {
+        this.results = [];
+        this.passed = 0;
+        this.failed = 0;
+        this.resultsDiv = document.getElementById('results');
+        this.summaryDiv = document.getElementById('summary');
+      }
+
+      log(message, type = 'info') {
+        const div = document.createElement('div');
+        div.className = `test-item ${type}`;
+        div.textContent = message;
+        this.resultsDiv.appendChild(div);
+        console.log(`[${type.toUpperCase()}]`, message);
+      }
+
+      section(title) {
+        const div = document.createElement('div');
+        div.className = 'test-section';
+        div.innerHTML = `<h2>${title}</h2>`;
+        this.resultsDiv.appendChild(div);
+        return div;
+      }
+
+      async assert(name, testFn) {
+        this.log(`Testing: ${name}`, 'running');
+        try {
+          await testFn();
+          this.log(`✓ ${name}`, 'pass');
+          this.passed++;
+          return true;
+        } catch (error) {
+          this.log(`✗ ${name}: ${error.message}`, 'fail');
+          console.error(error);
+          this.failed++;
+          return false;
+        }
+      }
+
+      updateSummary() {
+        const total = this.passed + this.failed;
+        const percentage = total > 0 ? Math.round((this.passed / total) * 100) : 0;
+        this.summaryDiv.innerHTML = `
+          <div class="summary ${this.failed === 0 ? 'pass' : 'fail'}">
+            Tests: ${total} | Passed: ${this.passed} | Failed: ${this.failed} | Success Rate: ${percentage}%
+          </div>
+        `;
+      }
+    }
+
+    const runner = new TestRunner();
+
+    // Import modules
+    const API = await import('./src/services/pollinations-api.js');
+    const Config = await import('./src/utils/config.js');
+    const Helpers = await import('./src/utils/helpers.js');
+    const Constants = await import('./src/utils/constants.js');
+
+    // Test Suite
+    async function runTests() {
+      runner.log('=== Starting Automated Test Suite ===', 'info');
+
+      // Section 1: Module Loading
+      const moduleSection = runner.section('📦 Module Loading Tests');
+
+      await runner.assert('Import API Service', async () => {
+        if (!API.fetchModels) throw new Error('fetchModels not found');
+        if (!API.generateCompletion) throw new Error('generateCompletion not found');
+        if (!API.generateSpeech) throw new Error('generateSpeech not found');
+      });
+
+      await runner.assert('Import Config Utils', async () => {
+        if (!Config.getConfig) throw new Error('getConfig not found');
+        if (!Config.isValidApiKey) throw new Error('isValidApiKey not found');
+      });
+
+      await runner.assert('Import Helpers', async () => {
+        if (!Helpers.generateSeed) throw new Error('generateSeed not found');
+        if (!Helpers.formatFileSize) throw new Error('formatFileSize not found');
+      });
+
+      await runner.assert('Import Constants', async () => {
+        if (!Constants.default.API) throw new Error('API constants not found');
+        if (!Constants.default.AUDIO) throw new Error('AUDIO constants not found');
+      });
+
+      // Section 2: Config Tests
+      const configSection = runner.section('⚙️ Configuration Tests');
+
+      await runner.assert('Load configuration', async () => {
+        const config = Config.getConfig();
+        if (!config) throw new Error('Config is null');
+        if (!config.API_BASE_URL) throw new Error('API_BASE_URL missing');
+      });
+
+      await runner.assert('Validate API key format - valid pk', async () => {
+        if (!Config.isValidApiKey('pk_test123')) throw new Error('Valid pk_ key rejected');
+      });
+
+      await runner.assert('Validate API key format - valid sk', async () => {
+        if (!Config.isValidApiKey('sk_test123')) throw new Error('Valid sk_ key rejected');
+      });
+
+      await runner.assert('Validate API key format - invalid', async () => {
+        if (Config.isValidApiKey('invalid_key')) throw new Error('Invalid key accepted');
+        if (Config.isValidApiKey('')) throw new Error('Empty key accepted');
+      });
+
+      // Section 3: Helper Function Tests
+      const helperSection = runner.section('🛠️ Helper Function Tests');
+
+      await runner.assert('Generate seed', async () => {
+        const seed = Helpers.generateSeed();
+        if (typeof seed !== 'number') throw new Error('Seed is not a number');
+        if (seed < 0 || seed > 65535) throw new Error('Seed out of range');
+      });
+
+      await runner.assert('Format file size - bytes', async () => {
+        const result = Helpers.formatFileSize(512);
+        if (!result.includes('Bytes')) throw new Error(`Expected Bytes, got ${result}`);
+      });
+
+      await runner.assert('Format file size - KB', async () => {
+        const result = Helpers.formatFileSize(1024);
+        if (!result.includes('KB')) throw new Error(`Expected KB, got ${result}`);
+      });
+
+      await runner.assert('Format file size - MB', async () => {
+        const result = Helpers.formatFileSize(1048576);
+        if (!result.includes('MB')) throw new Error(`Expected MB, got ${result}`);
+      });
+
+      await runner.assert('Truncate text', async () => {
+        const result = Helpers.truncateText('Hello World', 5);
+        if (result.length > 5) throw new Error('Text not truncated');
+        if (!result.includes('...')) throw new Error('Suffix not added');
+      });
+
+      await runner.assert('Parse error message - string', async () => {
+        const result = Helpers.parseErrorMessage('Test error');
+        if (result !== 'Test error') throw new Error('String parsing failed');
+      });
+
+      await runner.assert('Parse error message - Error object', async () => {
+        const err = new Error('Test error');
+        const result = Helpers.parseErrorMessage(err);
+        if (result !== 'Test error') throw new Error('Error object parsing failed');
+      });
+
+      // Section 4: Constants Tests
+      const constantsSection = runner.section('📋 Constants Tests');
+
+      await runner.assert('API constants defined', async () => {
+        const { API } = Constants.default;
+        if (API.BASE_URL !== 'https://gen.pollinations.ai') throw new Error('Wrong API URL');
+        if (API.DEFAULT_MODEL !== 'openai') throw new Error('Wrong default model');
+      });
+
+      await runner.assert('Audio constants defined', async () => {
+        const { AUDIO } = Constants.default;
+        if (!Array.isArray(AUDIO.VOICES)) throw new Error('VOICES not array');
+        if (AUDIO.VOICES.length === 0) throw new Error('No voices defined');
+        if (AUDIO.DEFAULT_VOICE !== 'alloy') throw new Error('Wrong default voice');
+      });
+
+      await runner.assert('File limits defined', async () => {
+        const { FILE_LIMITS } = Constants.default;
+        if (!FILE_LIMITS.IMAGE.MAX_SIZE) throw new Error('Image max size not defined');
+        if (!FILE_LIMITS.AUDIO.MAX_SIZE) throw new Error('Audio max size not defined');
+      });
+
+      // Section 5: API Integration Tests (if API key available)
+      const apiSection = runner.section('🌐 API Integration Tests');
+
+      const apiKey = Config.getApiKey();
+      if (apiKey && Config.isValidApiKey(apiKey)) {
+        runner.log(`Using API key: ${apiKey.substring(0, 10)}...`, 'info');
+
+        await runner.assert('Fetch models from API', async () => {
+          const models = await API.fetchModels(apiKey);
+          if (!Array.isArray(models)) throw new Error('Models is not an array');
+          if (models.length === 0) throw new Error('No models returned');
+          runner.log(`  Loaded ${models.length} models`, 'info');
+        });
+
+        await runner.assert('Models have required fields', async () => {
+          const models = await API.fetchModels(apiKey);
+          const firstModel = models[0];
+          if (!firstModel.id) throw new Error('Model missing id');
+          if (!firstModel.name) throw new Error('Model missing name');
+          if (firstModel.audio === undefined) throw new Error('Model missing audio field');
+          if (firstModel.vision === undefined) throw new Error('Model missing vision field');
+        });
+
+        await runner.assert('Find openai-audio model', async () => {
+          const models = await API.fetchModels(apiKey);
+          const audioModel = models.find(m => m.id === 'openai-audio');
+          if (!audioModel) throw new Error('openai-audio model not found');
+          if (!audioModel.audio) throw new Error('openai-audio should have audio capability');
+          runner.log(`  openai-audio capabilities: audio=${audioModel.audio}, vision=${audioModel.vision}`, 'info');
+        });
+
+        await runner.assert('Message content creation', async () => {
+          const content = API.createMessageContent({
+            text: 'Test message',
+            images: [{ url: 'https://example.com/image.jpg' }]
+          });
+          if (!Array.isArray(content)) throw new Error('Content is not array');
+          if (content.length !== 2) throw new Error('Expected 2 content items');
+          if (content[0].type !== 'text') throw new Error('First item should be text');
+          if (content[1].type !== 'image_url') throw new Error('Second item should be image');
+        });
+
+      } else {
+        runner.log('⚠️ No valid API key - skipping API integration tests', 'info');
+      }
+
+      // Final summary
+      runner.log('=== Test Suite Complete ===', 'info');
+      runner.updateSummary();
+
+      // Return test results
+      return {
+        passed: runner.passed,
+        failed: runner.failed,
+        total: runner.passed + runner.failed,
+        success: runner.failed === 0
+      };
+    }
+
+    // Run tests and report
+    try {
+      const results = await runTests();
+
+      if (results.success) {
+        runner.log('🎉 All tests passed! Code is ready for integration.', 'pass');
+      } else {
+        runner.log(`⚠️ ${results.failed} test(s) failed. Fix issues before proceeding.`, 'fail');
+      }
+
+      // Make results available globally for automation
+      window.testResults = results;
+
+    } catch (error) {
+      runner.log(`❌ Test suite crashed: ${error.message}`, 'fail');
+      console.error(error);
+    }
+  </script>
+</body>
+</html>
