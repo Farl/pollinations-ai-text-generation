@@ -551,32 +551,15 @@
         setResult('');
 
         try {
-          const headers = {
-            'Content-Type': 'application/json'
-          };
-          if (apiKey) {
-            headers['Authorization'] = `Bearer ${apiKey}`;
-          }
-
-          const response = await fetch(window.PollinationsConstants.API.BASE_URL + window.PollinationsConstants.API.ENDPOINTS.AUDIO_SPEECH, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({
-              model: ttsModel,
-              input: prompt,
-              voice: voiceOption,
-              response_format: ttsFormat,
-              speed: ttsSpeed
-            })
+          // Use refactored API service
+          const audioBlob = await window.PollinationsAPI.generateSpeech({
+            apiKey,
+            model: ttsModel,
+            input: prompt,
+            voice: voiceOption,
+            responseFormat: ttsFormat,
+            speed: ttsSpeed
           });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(JSON.stringify(errorData));
-          }
-
-          // Get the audio blob
-          const audioBlob = await response.blob();
           const audioUrl = URL.createObjectURL(audioBlob);
           setAudioURL(audioUrl);
           setResult(`✅ Audio generated successfully! Format: ${ttsFormat}, Voice: ${voiceOption}, Speed: ${ttsSpeed}x`);
@@ -720,21 +703,6 @@
             messages = [newMessage];
           }
 
-          let bodyData = {
-              messages: messages,
-              model: model,
-              stream: isStreaming,
-              seed: seed
-          };
-
-          // Add system prompt as a system message (OpenAI-compatible format)
-          if (systemPrompt) {
-            bodyData.messages = [
-              { role: "system", content: systemPrompt },
-              ...messages
-            ];
-          }
-
           // Determine modalities based on the model's capabilities from API
           const currentModelInfo = models.find(m => m.name === model);
           const modelOutputModalities = currentModelInfo && currentModelInfo.output_modalities
@@ -742,28 +710,28 @@
             : ['text'];
           const modelRequiresAudio = modelOutputModalities.includes('audio');
 
+          // Build completion options
+          const completionOptions = {
+            apiKey,
+            model,
+            messages,
+            systemPrompt,
+            stream: isStreaming,
+            seed
+          };
+
           // If the model supports audio output or user requests audio output,
           // set modalities accordingly
           if (modelRequiresAudio || outputAudio) {
-            bodyData.modalities = modelOutputModalities;
-            bodyData.audio = {
+            completionOptions.modalities = modelOutputModalities;
+            completionOptions.audio = {
               voice: voiceOption,
               format: "pcm16"
             };
           }
 
-          // Streaming audio generation using new API
-          const headers = {
-            'Content-Type': 'application/json'
-          };
-          if (apiKey) {
-            headers['Authorization'] = `Bearer ${apiKey}`;
-          }
-          const response = await fetch(window.PollinationsConstants.API.BASE_URL + window.PollinationsConstants.API.ENDPOINTS.CHAT_COMPLETIONS, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(bodyData)
-          });
+          // Use refactored API service
+          const response = await window.PollinationsAPI.generateCompletion(completionOptions);
 
           // Process audio chunks
           console.log({
