@@ -558,7 +558,7 @@
             headers['Authorization'] = `Bearer ${apiKey}`;
           }
 
-          const response = await fetch('https://gen.pollinations.ai/v1/audio/speech', {
+          const response = await fetch(window.PollinationsConstants.API.BASE_URL + window.PollinationsConstants.API.ENDPOINTS.AUDIO_SPEECH, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify({
@@ -735,14 +735,17 @@
             ];
           }
 
-          // Check if the selected model is audio-capable
+          // Determine modalities based on the model's capabilities from API
           const currentModelInfo = models.find(m => m.name === model);
-          const isAudioModel = currentModelInfo && currentModelInfo.audio;
+          const modelOutputModalities = currentModelInfo && currentModelInfo.output_modalities
+            ? currentModelInfo.output_modalities
+            : ['text'];
+          const modelRequiresAudio = modelOutputModalities.includes('audio');
 
-          // Audio-capable models (e.g. openai-audio) ALWAYS require audio
-          // in either input or output modalities
-          if (isAudioModel || outputAudio) {
-            bodyData.modalities = ["text", "audio"];
+          // If the model supports audio output or user requests audio output,
+          // set modalities accordingly
+          if (modelRequiresAudio || outputAudio) {
+            bodyData.modalities = modelOutputModalities;
             bodyData.audio = {
               voice: voiceOption,
               format: "pcm16"
@@ -756,7 +759,7 @@
           if (apiKey) {
             headers['Authorization'] = `Bearer ${apiKey}`;
           }
-          const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+          const response = await fetch(window.PollinationsConstants.API.BASE_URL + window.PollinationsConstants.API.ENDPOINTS.CHAT_COMPLETIONS, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(bodyData)
