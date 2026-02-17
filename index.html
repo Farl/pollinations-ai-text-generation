@@ -735,20 +735,18 @@
             ];
           }
 
-          // The openai-audio model requires modalities parameter when using audio
-          // Add modalities based on whether we have audio input/output
-          if (inputAudio || outputAudio) {
-            // If we want audio output, include it in modalities
-            if (outputAudio) {
-              bodyData.modalities = ["text", "audio"];
-              bodyData.audio = {
-                voice: voiceOption,
-                format: "pcm16"
-              };
-            } else {
-              // Audio input only (speech-to-text) - output is text only
-              bodyData.modalities = ["text"];
-            }
+          // Check if the selected model is audio-capable
+          const currentModelInfo = models.find(m => m.name === model);
+          const isAudioModel = currentModelInfo && currentModelInfo.audio;
+
+          // Audio-capable models (e.g. openai-audio) ALWAYS require audio
+          // in either input or output modalities
+          if (isAudioModel || outputAudio) {
+            bodyData.modalities = ["text", "audio"];
+            bodyData.audio = {
+              voice: voiceOption,
+              format: "pcm16"
+            };
           }
 
           // Streaming audio generation using new API
