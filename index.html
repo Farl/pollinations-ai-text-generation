@@ -110,13 +110,21 @@
     import * as API from './src/services/pollinations-api.js';
     import * as Config from './src/utils/config.js';
     import * as Helpers from './src/utils/helpers.js';
+    import * as AudioUtils from './src/utils/audio-utils.js';
     import Constants from './src/utils/constants.js';
+    import * as ModelSelection from './src/hooks/useModelSelection.js';
+    import * as ChatHistory from './src/hooks/useChatHistory.js';
 
     // Make modules available globally for Babel script
     window.PollinationsAPI = API;
     window.PollinationsConfig = Config;
     window.PollinationsHelpers = Helpers;
+    window.PollinationsAudioUtils = AudioUtils;
     window.PollinationsConstants = Constants;
+    window.PollinationsHooks = {
+      useModelSelection: ModelSelection.useModelSelection,
+      useChatHistory: ChatHistory.useChatHistory
+    };
 
     console.log('✓ Pollinations modules loaded');
   </script>
@@ -125,8 +133,6 @@
     const App = () => {
       // React state hooks
       const [prompt, setPrompt] = React.useState('');
-      const [models, setModels] = React.useState([]);
-      const [model, setModel] = React.useState('openai');
       const [result, setResult] = React.useState(null);
       const [loading, setLoading] = React.useState(false);
       const [activeTab, setActiveTab] = React.useState('text');
@@ -142,29 +148,24 @@
       const [streamedResult, setStreamedResult] = React.useState('');
       const [audioPlayerRef, setAudioPlayerRef] = React.useState(null);
       const [audioURL, setAudioURL] = React.useState(null);
-      const [enableMemory, setEnableMemory] = React.useState(false);
-      const [chatHistory, setChatHistory] = React.useState([]);
       const [voiceOption, setVoiceOption] = React.useState('alloy');
       const [voiceToAudio, setVoiceToAudio] = React.useState(false);
       const [useAudioInput, setUseAudioInput] = React.useState(true);
       const [systemPrompt, setSystemPrompt] = React.useState('You are a helpful assistant.');
       const [showMarkdown, setShowMarkdown] = React.useState(false);
       const [apiKey, setApiKey] = React.useState(() => {
-        // Try to get API key from config, fallback to empty string
         return (window.POLLINATIONS_CONFIG && window.POLLINATIONS_CONFIG.API_KEY) || '';
       });
       const [ttsFormat, setTtsFormat] = React.useState('mp3');
       const [ttsSpeed, setTtsSpeed] = React.useState(1);
       const [ttsModel, setTtsModel] = React.useState('tts-1');
-      const [lastSelectedModels, setLastSelectedModels] = React.useState(() => {
-        try {
-          const saved = localStorage.getItem('lastSelectedModels');
-          return saved ? JSON.parse(saved) : {};
-        } catch (error) {
-          console.error('Error reading from localStorage', error);
-          return {};
-        }
-      });
+
+      // Custom hooks
+      const { models, model, setModel, lastSelectedModels, setLastSelectedModels, getFilteredModels } =
+        window.PollinationsHooks.useModelSelection({ activeTab, apiKey, voiceToAudio, setVoiceToAudio });
+
+      const { enableMemory, chatHistory, setChatHistory, handleMemoryToggle } =
+        window.PollinationsHooks.useChatHistory();
       const outputText = React.useRef('');
 
       let combinedLine = '';
@@ -185,29 +186,6 @@
 
       const useWebAudioAudioWorklet = true;
       const workletNodeRef = React.useRef(null);
-
-      const filterModelsByTab = (allModels, tab) => {
-        return allModels.filter(model => {
-          switch (tab) {
-            case 'vision':
-              return model.vision === true;
-            case 'audio':
-            case 'speech':
-              return model.audio === true;
-            default:
-              return true;
-          }
-        });
-      };
-
-      const getFilteredModels = React.useCallback(() => {
-        let filtered = filterModelsByTab(models, activeTab);
-        if (voiceToAudio) {
-          // Models with audio capability are marked with `audio: true`
-          filtered = filtered.filter(model => model.audio === true);
-        }
-        return filtered;
-      }, [models, activeTab, voiceToAudio]);
 
       React.useEffect(() => {
         if (useWebAudioScriptProcessor) {
@@ -292,97 +270,8 @@
       }
 
       React.useEffect(() => {
-        const fetchModels = async () => {
-          try {
-            // Use refactored API service
-            const formattedModels = await window.PollinationsAPI.fetchModels(apiKey);
-
-            const defaultModels = [{
-              id: 'default',
-              name: 'default',
-              description: ''
-            }];
-            const loadedModels = formattedModels.filter(model =>
-              !defaultModels.some(def => def.id === model.id));
-
-            const combinedModels = loadedModels.length > 0 ?
-              [
-                ...formattedModels.filter(model =>
-                  !defaultModels.some(def => def.id === model.id))
-              ] : [...defaultModels];
-
-            setModels(combinedModels);
-
-            // Filter models based on current tab
-            const filteredModels = filterModelsByTab(combinedModels, activeTab);
-
-            // Set model to first filtered model or default
-            if (filteredModels.length > 0) {
-              const lastSelected = lastSelectedModels[activeTab];
-              if (lastSelected && filteredModels.some(m => m.name === lastSelected)) {
-                setModel(lastSelected);
-              } else {
-                setModel(filteredModels[0].name || 'default');
-              }
-            }
-          } catch (error) {
-            console.error('Error fetching models:', error);
-            const defaultModels = [{
-              id: 'default',
-              name: 'Default Model'
-            }];
-            setModels(defaultModels);
-            setModel(defaultModels[0].name);
-          }
-        };
-
-        console.log(activeTab);
-        fetchModels();
-      }, [activeTab, apiKey]); // Add activeTab and apiKey as dependencies
-
-      // When activeTab or voiceToAudio changes, re-filter models and set default
-      React.useEffect(() => {
-        const filteredModels = getFilteredModels();
-
-        if (filteredModels.length > 0) {
-          const currentModelIsValid = filteredModels.some(m => m.name === model);
-          if (currentModelIsValid) {
-              return; // Keep current selection if valid
-          }
-
-          const lastSelected = lastSelectedModels[activeTab];
-          if (lastSelected && filteredModels.some(m => m.name === lastSelected)) {
-            setModel(lastSelected);
-          } else {
-            setModel(filteredModels[0].name || 'default');
-          }
-        }
-      }, [activeTab, models, voiceToAudio, getFilteredModels]);
-
-      React.useEffect(() => {
         console.log('audioURL = ' + audioURL);
-        // Reload audio
-        if (audioPlayerRef) {
-          //audioPlayerRef.load();
-          //audioPlayerRef.play();
-        }
       }, [audioURL])
-
-      React.useEffect(() => {
-        try {
-          localStorage.setItem('lastSelectedModels', JSON.stringify(lastSelectedModels));
-        } catch (error) {
-          console.error('Error writing to localStorage', error);
-        }
-      }, [lastSelectedModels]);
-
-      // Auto-disable audio response if selected model doesn't support audio output
-      React.useEffect(() => {
-        const currentModel = models.find(m => m.name === model);
-        if (voiceToAudio && currentModel && !currentModel.audio) {
-          setVoiceToAudio(false);
-        }
-      }, [model, models, voiceToAudio]);
 
       const startAudioRecording = async () => {
         try {
@@ -436,37 +325,13 @@
         }
       };
 
-      const convertToWav = async (audioBuffer) => {
-        return new Promise((resolve, reject) => {
-          try {
-
-            const worker = new Worker('wav-worker.js');
-            worker.onmessage = (e) => {
-              if (e.data.type === 'wav') {
-                resolve(new Blob([e.data.wav], {
-                  type: 'audio/wav'
-                }));
-              }
-            };
-            worker.onerror = reject;
-
-            const channelData = [];
-            for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-              channelData.push(audioBuffer.getChannelData(i));
-            }
-
-            worker.postMessage({
-              type: 'convert',
-              channelData: channelData,
-              sampleRate: audioBuffer.sampleRate,
-              numberOfChannels: audioBuffer.numberOfChannels,
-              length: audioBuffer.length
-            }, channelData.map(data => data.buffer));
-          } catch (error) {
-            console.error("Error in convertToWav:", error);
-            reject(error);
-          }
-        });
+      // Audio utility functions from module
+      const convertToWav = window.PollinationsAudioUtils.convertToWav;
+      const blobToBase64 = window.PollinationsAudioUtils.blobToBase64;
+      const bufferToWav = window.PollinationsAudioUtils.bufferToWav;
+      const convertPCM16ToFloat32 = (pcmData, originalSampleRate) => {
+        const targetRate = audioContextRef.current ? audioContextRef.current.sampleRate : 44100;
+        return window.PollinationsAudioUtils.convertPCM16ToFloat32(pcmData, originalSampleRate, targetRate);
       };
 
       const stopAudioRecording = () => {
@@ -581,16 +446,6 @@
         }
         return completedSSE;
       }
-
-      const generateText = async () => {
-        // This function will be deprecated in favor of generateAudio
-        await generateAudio();
-      };
-
-      const generateWithImage = async (imageUrl) => {
-        // This function will be deprecated in favor of generateAudio
-        await generateAudio();
-      };
 
       const handleImageUpload = (event) => {
         const files = event.target.files;
@@ -1002,138 +857,6 @@
           ]);
         }
       };
-
-      const blobToBase64 = (blob) => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            resolve(reader.result.split(',')[1]);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      };
-
-      const handleMemoryToggle = () => {
-        if (enableMemory) {
-          // Currently enabled, about to disable
-          if (chatHistory.length > 0 && window.confirm("Do you want to clear your chat memory?")) {
-            setChatHistory([]);
-          }
-          setEnableMemory(false);
-        } else {
-          // Currently disabled, about to enable
-          setEnableMemory(true);
-        }
-      };
-
-      function writeString(view, offset, str) {
-        for (let i = 0; i < str.length; i++) {
-          view.setUint8(offset + i, str.charCodeAt(i));
-        }
-      }
-
-      const bufferToWav = (combinedChunks) => {
-        console.log({
-          combinedChunks
-        });
-
-        const sampleRate = 24000; // OpenAI 音訊標準採樣率
-        const numChannels = 1; // 單聲道
-        const bitsPerSample = 16; // PCM16
-
-        // 確保 PCM 數據長度是 2 的倍數，避免丟失最後 1 byte
-        if (combinedChunks.length % 2 !== 0) {
-          console.warn("combinedChunks length is not aligned to 16-bit samples, trimming last byte.");
-          combinedChunks = combinedChunks.slice(0, combinedChunks.length - 1);
-        }
-
-        // 計算總樣本數
-        const sampleSize = bitsPerSample / 8; // 每個樣本的大小
-        const expectedSamples = combinedChunks.length / sampleSize; // 16-bit PCM，每個 sample 佔 2 bytes
-        const remainder = expectedSamples % sampleRate; // 確保長度可以被 sampleRate 整除
-        const missingSamples = (sampleRate - remainder) % sampleRate; // 需要補充的 samples
-
-        // 計算 padding 大小
-        let paddingSize = missingSamples * numChannels * sampleSize;
-        console.log(`Padding samples: ${missingSamples}, Padding bytes: ${paddingSize}`);
-
-        // 添加 padding
-        const padding = new Uint8Array(paddingSize);
-        const paddedData = new Uint8Array(combinedChunks.length + paddingSize);
-        paddedData.set(combinedChunks, 0);
-        paddedData.set(padding, combinedChunks.length);
-
-        // 建立 WAV Header
-        const headerSize = 44;
-        const dataSize = paddedData.length;
-        const totalSize = headerSize + dataSize;
-
-        const header = new ArrayBuffer(headerSize);
-        const headerView = new DataView(header);
-
-        writeString(headerView, 0, 'RIFF');
-        headerView.setUint32(4, totalSize - 8, true);
-        writeString(headerView, 8, 'WAVE');
-        writeString(headerView, 12, 'fmt ');
-        headerView.setUint32(16, 16, true); // Subchunk1Size
-        headerView.setUint16(20, 1, true); // AudioFormat (PCM)
-        headerView.setUint16(22, numChannels, true); // NumChannels
-        headerView.setUint32(24, sampleRate, true); // SampleRate
-        headerView.setUint32(28, sampleRate * numChannels * sampleSize, true); // ByteRate
-        headerView.setUint16(32, numChannels * sampleSize, true); // BlockAlign
-        headerView.setUint16(34, bitsPerSample, true); // BitsPerSample
-        writeString(headerView, 36, 'data');
-        headerView.setUint32(40, dataSize, true); // Subchunk2Size
-
-        // 合併 Header 和音訊數據
-        const wavData = new Uint8Array(totalSize);
-        wavData.set(new Uint8Array(header), 0);
-        wavData.set(paddedData, headerSize);
-        return wavData;
-      }
-
-      function resampleFloat32(inputArray, originalRate, targetRate) {
-        if (originalRate === targetRate) return inputArray; // 
-
-        console.log("Resampling from", originalRate, "to", targetRate);
-
-        const ratio = targetRate / originalRate;
-        const newLength = Math.round(inputArray.length * ratio);
-        const outputArray = new Float32Array(newLength);
-
-        for (let i = 0; i < newLength; i++) {
-          const srcIndex = i / ratio;
-          const index0 = Math.floor(srcIndex);
-          const index1 = Math.min(index0 + 1, inputArray.length - 1);
-          const t = srcIndex - index0;
-          outputArray[i] = (1 - t) * inputArray[index0] + t * inputArray[index1];
-        }
-
-        return outputArray;
-      }
-
-      function convertPCM16ToFloat32(pcmData, originalSampleRate) {
-        if (pcmData.length % 2 !== 0) {
-          console.error("Invalid PCM16 data: length is not even!", pcmData.length);
-          return new Float32Array(0);
-        }
-
-        const samples = pcmData.length / 2;
-        const float32Array = new Float32Array(samples);
-        const dataView = new DataView(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength); // 
-
-        for (let i = 0; i < samples; i++) {
-          const int16 = dataView.getInt16(i * 2, true); // Little-endian
-          float32Array[i] = int16 / 32768.0;
-        }
-        //console.log("AudioContext sample rate:", audioContextRef.current.sampleRate);
-        // 
-        let targetSampleRate = 44100;
-        if (audioContextRef.current)
-          targetSampleRate = audioContextRef.current.sampleRate;
-        return resampleFloat32(float32Array, originalSampleRate, targetSampleRate);
-      }
 
       const setOutput = (msg) => {
         outputText.current = msg;
