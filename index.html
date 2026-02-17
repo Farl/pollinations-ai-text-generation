@@ -170,59 +170,11 @@
 
       let combinedLine = '';
 
-      const useBlobMethod = true;
-
-      const useMediaSource = false;
-      let mediaSource = null;
-      let sourceBuffer = null;
-      // 創建一個隊列來存儲等待處理的音頻片段
-      let pendingAudioChunks = [];
-      let isProcessingQueue = false;
-
-      const useWebAudioScriptProcessor = false;
       const audioContextRef = React.useRef(null);
-      const scriptNodeRef = React.useRef(null);
-      const bufferQueue = React.useRef([]);
-
-      const useWebAudioAudioWorklet = true;
       const workletNodeRef = React.useRef(null);
 
       React.useEffect(() => {
-        if (useWebAudioScriptProcessor) {
-          // 建立 Web Audio API
-          audioContextRef.current = new AudioContext();
-
-          // 創建 ScriptProcessorNode
-          scriptNodeRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-          // 處理音訊資料
-          scriptNodeRef.current.onaudioprocess = (event) => {
-            const output = event.outputBuffer.getChannelData(0);
-
-            if (bufferQueue.current.length > 0) {
-              const nextBuffer = bufferQueue.current[0];
-
-              // 計算需要填充的數據長度
-              const lengthToCopy = Math.min(output.length, nextBuffer.length);
-              output.set(nextBuffer.subarray(0, lengthToCopy));
-
-              // 如果音訊塊有剩餘部分，更新隊列中的音訊塊
-              if (nextBuffer.length > output.length) {
-                bufferQueue.current[0] = nextBuffer.subarray(output.length);
-              } else {
-                bufferQueue.current.shift(); // 音訊塊處理完成，移除
-              }
-            } else {
-              output.fill(0); // 若沒有音訊資料，填充 0
-            }
-          };
-
-          // 連接到喇叭
-          scriptNodeRef.current.connect(audioContextRef.current.destination);
-        }
-        if (useWebAudioAudioWorklet) {
-          restartAudioWorklet();
-        }
+        restartAudioWorklet();
       }, []);
 
       async function setupAudioWorklet() {
@@ -265,7 +217,7 @@
       }
 
       const enqueueAudioData = (workletNode, audioData) => {
-        //console.log({workletNode});
+
         workletNode.port.postMessage(audioData);
       }
 
@@ -381,7 +333,7 @@
               return;
             }
 
-            //console.log('Sending audio to Pollinations, base64 length:', window.recordedAudioBase64.length);
+
 
             await generateAudio();
           } catch (error) {
@@ -588,46 +540,9 @@
           // Use refactored API service
           const response = await window.PollinationsAPI.generateCompletion(completionOptions);
 
-          // Process audio chunks
-          console.log({
-            response
-          });
 
-          if (outputAudio && useMediaSource && window.MediaSource) {
 
-            //checkMIMECodec();
-            const mimeCodec = 'audio/mpeg';
-            const audioElement = document.createElement("audio");
-
-            let firstChunkAppended = false;
-
-            mediaSource = new MediaSource();
-            setAudioURL(URL.createObjectURL(mediaSource));
-
-            audioElement.controls = true;
-            audioElement.src = URL.createObjectURL(mediaSource);
-            document.body.appendChild(audioElement);
-
-            mediaSource.addEventListener('sourceopen', () => {
-              if (MediaSource.isTypeSupported(mimeCodec)) {
-                sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
-              } else {
-                console.error("MIME type not supported:", mimeCodec);
-              }
-              console.log('source open');
-
-              sourceBuffer.addEventListener('updateend', () => {
-                if (!firstChunkAppended) {
-                  firstChunkAppended = true;
-                  audioElement.play().catch(err => {
-                    console.error("音頻播放失敗:", err);
-                  });
-                }
-              });
-            });
-          }
-          if (outputAudio && useWebAudioScriptProcessor) {}
-          if (outputAudio && useWebAudioAudioWorklet) {
+          if (outputAudio) {
             await restartAudioWorklet();
           }
 
@@ -646,36 +561,22 @@
                   done,
                   value
                 } = await reader.read();
-                //console.log({value});
+
                 if (!value) break;
                 if (done) break;
                 // append audio bytes
                 totalBuffer = [...totalBuffer, ...value];
               }
-              //console.log({totalBuffer});
+
               const audioBytes = new Uint8Array(totalBuffer);
 
-              // Add to audio chunks array
+              // Add to audio chunks
               setAudioChunks(prevChunks => [...prevChunks, audioBytes]);
+              localAudioChunks = [...localAudioChunks, audioBytes];
 
-
-              if (outputAudio && useBlobMethod) {
-                localAudioChunks = [...localAudioChunks, audioBytes];
-              }
-              // If MediaSource is supported, append to source buffer
-              if (outputAudio && useMediaSource && mediaSource) {
-                appendAudioChunk(audioBytes);
-              }
-
-              // 轉換 PCM16 → Float32
-              if (outputAudio && useWebAudioScriptProcessor) {
-                const floatData = convertPCM16ToFloat32(audioBytes, 24000);
-                bufferQueue.current.push(floatData);
-              }
-              if (outputAudio && useWebAudioAudioWorklet) {
-                const floatData = convertPCM16ToFloat32(audioBytes, 24000);
-                enqueueAudioData(workletNodeRef.current, floatData);
-              }
+              // Send to AudioWorklet for real-time playback
+              const floatData = convertPCM16ToFloat32(audioBytes, 24000);
+              enqueueAudioData(workletNodeRef.current, floatData);
             } else {
               const rawData = await response.text();
               try {
@@ -700,18 +601,17 @@
                 done,
                 value
               } = await reader.read();
-              //console.log({value});
               if (done) break;
 
               const chunk = decoder.decode(value, {
                 stream: isStreaming
               });
-              //console.log({chunk});
+
 
               // Combine chunks
               let completedSSE = combinedChunk(chunk);
 
-              //console.log({completedSSE});
+
 
               // Process SSE format
               const lines = completedSSE.split("\n").filter(line => line.startsWith("data: "));
@@ -720,19 +620,17 @@
                 try {
                   const jsonString = line.replace("data: ", "").trim();
 
-                  //console.log({line});
+
                   if (jsonString === "[DONE]") continue;
 
                   const parsedChunk = JSON.parse(jsonString);
-                  //console.log(parsedChunk);
+
 
                   if (parsedChunk && parsedChunk.choices && parsedChunk.choices[0] && parsedChunk.choices[0].delta && parsedChunk.choices[0].delta.audio) {
-                    //console.log(parsedChunk.choices[0]);
+
                     // Handle audio data from delta format
                     const audioData = parsedChunk.choices[0].delta.audio.data;
                     if (audioData) {
-                      //console.log({ audioData });
-
                       // Decode base64 audio chunk
                       const binaryData = atob(audioData);
                       const arrayBuffer = new ArrayBuffer(binaryData.length);
@@ -740,29 +638,14 @@
                       for (let i = 0; i < binaryData.length; i++) {
                         audioBytes[i] = binaryData.charCodeAt(i);
                       }
-                      //const audioBytes = new Uint8Array(atob(audioData).split('').map(c => c.charCodeAt(0)));
-                      //console.log(audioBytes);
 
-                      // Add to audio chunks array
+                      // Add to audio chunks
                       setAudioChunks(prevChunks => [...prevChunks, audioBytes]);
+                      localAudioChunks = [...localAudioChunks, audioBytes];
 
-                      if (outputAudio && useBlobMethod) {
-                        localAudioChunks = [...localAudioChunks, audioBytes];
-                      }
-                      // If MediaSource is supported, append to source buffer
-                      if (outputAudio && useMediaSource && mediaSource) {
-                        //appendAudioChunk(audioBytes);
-                      }
-
-                      // 轉換 PCM16 → Float32
-                      if (outputAudio && useWebAudioScriptProcessor) {
-                        const floatData = convertPCM16ToFloat32(audioBytes, 24000);
-                        bufferQueue.current.push(floatData);
-                      }
-                      if (outputAudio && useWebAudioAudioWorklet) {
-                        const floatData = convertPCM16ToFloat32(audioBytes, 24000);
-                        enqueueAudioData(workletNodeRef.current, floatData);
-                      }
+                      // Send to AudioWorklet for real-time playback
+                      const floatData = convertPCM16ToFloat32(audioBytes, 24000);
+                      enqueueAudioData(workletNodeRef.current, floatData);
                     }
 
                     // Update text result if transcript is available
@@ -788,16 +671,13 @@
                   }
                 } catch (error) {
                   console.error("JSON parsing error:", error);
-                  //console.error(line);
+
                 }
               }
             } // end while
           }
-          // If MediaSource is not supported or failed, create a single audio file from chunks
-          if (outputAudio && useBlobMethod) {
-            console.log('Blob method');
-
-            // Combine all audio chunks into a single Uint8Array
+          // Combine audio chunks into WAV file for download/playback
+          if (outputAudio && localAudioChunks.length > 0) {
             let combinedChunks = new Uint8Array(localAudioChunks.reduce((acc, chunk) => acc + chunk.length, 0));
             let offset = 0;
             for (const chunk of localAudioChunks) {
@@ -805,37 +685,13 @@
               offset += chunk.length;
             }
 
-            //console.log({localAudioChunks});
-
-            // Convert to WAV format
             const wavData = bufferToWav(combinedChunks);
-            const audioBlob = new Blob([wavData], {
-              type: 'audio/wav'
-            });
-            const url = URL.createObjectURL(audioBlob);
-
-            // Add audio and play
-            setAudioURL(url);
-
-            // Trigger download
-            //const link = document.createElement("a");
-            //link.href = url;
-            //link.download = "audio.wav";
-            //link.click();
-            //URL.revokeObjectURL(url);
+            const audioBlob = new Blob([wavData], { type: 'audio/wav' });
+            setAudioURL(URL.createObjectURL(audioBlob));
           }
-          // Close MediaSource when done
-          if (outputAudio && useMediaSource && mediaSource) {
-            //if (mediaSource && mediaSource.readyState === 'open' && sourceBuffer.updating === false) {
-            //    mediaSource.endOfStream();
-            //}
-            //endStream();
-          }
-          if (outputAudio && useWebAudioScriptProcessor) {}
-          if (outputAudio && useWebAudioAudioWorklet) {
 
-            if (!workletNodeRef.current) return;
-            console.log("發送停止指令給 AudioWorklet");
+          // Stop AudioWorklet playback
+          if (outputAudio && workletNodeRef.current) {
             workletNodeRef.current.port.postMessage("STOP");
           }
         } catch (error) {
