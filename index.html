@@ -1,0 +1,1773 @@
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pollinations AI API (New gen.pollinations.ai)</title>
+  <script src="config.js"></script>
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .markdown-content h1 {
+      font-size: 2em;
+      font-weight: bold;
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+    }
+
+    .markdown-content h2 {
+      font-size: 1.5em;
+      font-weight: bold;
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+    }
+
+    .markdown-content h3 {
+      font-size: 1.25em;
+      font-weight: bold;
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+    }
+
+    .markdown-content h4 {
+      font-size: 1.1em;
+      font-weight: bold;
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+    }
+
+    .markdown-content p {
+      margin-bottom: 1em;
+    }
+
+    .markdown-content ul,
+    .markdown-content ol {
+      margin-left: 2em;
+      margin-bottom: 1em;
+    }
+
+    .markdown-content ul {
+      list-style-type: disc;
+    }
+
+    .markdown-content ol {
+      list-style-type: decimal;
+    }
+
+    .markdown-content pre {
+      background-color: #f5f5f5;
+      padding: 1em;
+      margin-bottom: 1em;
+      overflow-x: auto;
+    }
+
+    .markdown-content code {
+      background-color: #f5f5f5;
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+
+    .markdown-content blockquote {
+      border-left: 4px solid #ddd;
+      padding-left: 1em;
+      margin-left: 0;
+      margin-bottom: 1em;
+    }
+
+    .markdown-content a {
+      color: #0366d6;
+      text-decoration: none;
+    }
+
+    .markdown-content a:hover {
+      text-decoration: underline;
+    }
+
+    .markdown-content table {
+      border-collapse: collapse;
+      margin-bottom: 1em;
+    }
+
+    .markdown-content table th,
+    .markdown-content table td {
+      border: 1px solid #ddd;
+      padding: 0.5em;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const App = () => {
+      // React state hooks
+      const [prompt, setPrompt] = React.useState('');
+      const [models, setModels] = React.useState([]);
+      const [model, setModel] = React.useState('openai');
+      const [result, setResult] = React.useState(null);
+      const [loading, setLoading] = React.useState(false);
+      const [activeTab, setActiveTab] = React.useState('text');
+      const [imageUrl, setImageUrl] = React.useState('');
+      const [uploadedImages, setUploadedImages] = React.useState([]);
+      const [isListening, setIsListening] = React.useState(false);
+      const [speechLanguage, setSpeechLanguage] = React.useState('en-US');
+      const [speechOutputText, setSpeechOutputText] = React.useState('');
+      const [speechMethod, setSpeechMethod] = React.useState('pollinations');
+      const [audioRecorder, setAudioRecorder] = React.useState(null);
+      const [audioChunks, setAudioChunks] = React.useState([]);
+      const [isStreaming, setIsStreaming] = React.useState(true);
+      const [streamedResult, setStreamedResult] = React.useState('');
+      const [audioPlayerRef, setAudioPlayerRef] = React.useState(null);
+      const [audioURL, setAudioURL] = React.useState(null);
+      const [enableMemory, setEnableMemory] = React.useState(false);
+      const [chatHistory, setChatHistory] = React.useState([]);
+      const [voiceOption, setVoiceOption] = React.useState('alloy');
+      const [voiceToAudio, setVoiceToAudio] = React.useState(false);
+      const [useAudioInput, setUseAudioInput] = React.useState(true);
+      const [systemPrompt, setSystemPrompt] = React.useState('You are a helpful assistant.');
+      const [showMarkdown, setShowMarkdown] = React.useState(false);
+      const [apiKey, setApiKey] = React.useState(() => {
+        // Try to get API key from config, fallback to empty string
+        return (window.POLLINATIONS_CONFIG && window.POLLINATIONS_CONFIG.API_KEY) || '';
+      });
+      const [ttsFormat, setTtsFormat] = React.useState('mp3');
+      const [ttsSpeed, setTtsSpeed] = React.useState(1);
+      const [ttsModel, setTtsModel] = React.useState('tts-1');
+      const [lastSelectedModels, setLastSelectedModels] = React.useState(() => {
+        try {
+          const saved = localStorage.getItem('lastSelectedModels');
+          return saved ? JSON.parse(saved) : {};
+        } catch (error) {
+          console.error('Error reading from localStorage', error);
+          return {};
+        }
+      });
+      const outputText = React.useRef('');
+
+      let combinedLine = '';
+
+      const useBlobMethod = true;
+
+      const useMediaSource = false;
+      let mediaSource = null;
+      let sourceBuffer = null;
+      // 創建一個隊列來存儲等待處理的音頻片段
+      let pendingAudioChunks = [];
+      let isProcessingQueue = false;
+
+      const useWebAudioScriptProcessor = false;
+      const audioContextRef = React.useRef(null);
+      const scriptNodeRef = React.useRef(null);
+      const bufferQueue = React.useRef([]);
+
+      const useWebAudioAudioWorklet = true;
+      const workletNodeRef = React.useRef(null);
+
+      const filterModelsByTab = (allModels, tab) => {
+        return allModels.filter(model => {
+          switch (tab) {
+            case 'vision':
+              return model.vision === true;
+            case 'audio':
+            case 'speech':
+              return model.audio === true;
+            default:
+              return true;
+          }
+        });
+      };
+
+      const getFilteredModels = React.useCallback(() => {
+        let filtered = filterModelsByTab(models, activeTab);
+        if (voiceToAudio) {
+          // Models with audio capability are marked with `audio: true`
+          filtered = filtered.filter(model => model.audio === true);
+        }
+        return filtered;
+      }, [models, activeTab, voiceToAudio]);
+
+      React.useEffect(() => {
+        if (useWebAudioScriptProcessor) {
+          // 建立 Web Audio API
+          audioContextRef.current = new AudioContext();
+
+          // 創建 ScriptProcessorNode
+          scriptNodeRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+
+          // 處理音訊資料
+          scriptNodeRef.current.onaudioprocess = (event) => {
+            const output = event.outputBuffer.getChannelData(0);
+
+            if (bufferQueue.current.length > 0) {
+              const nextBuffer = bufferQueue.current[0];
+
+              // 計算需要填充的數據長度
+              const lengthToCopy = Math.min(output.length, nextBuffer.length);
+              output.set(nextBuffer.subarray(0, lengthToCopy));
+
+              // 如果音訊塊有剩餘部分，更新隊列中的音訊塊
+              if (nextBuffer.length > output.length) {
+                bufferQueue.current[0] = nextBuffer.subarray(output.length);
+              } else {
+                bufferQueue.current.shift(); // 音訊塊處理完成，移除
+              }
+            } else {
+              output.fill(0); // 若沒有音訊資料，填充 0
+            }
+          };
+
+          // 連接到喇叭
+          scriptNodeRef.current.connect(audioContextRef.current.destination);
+        }
+        if (useWebAudioAudioWorklet) {
+          restartAudioWorklet();
+        }
+      }, []);
+
+      async function setupAudioWorklet() {
+        const option = {
+          sampleRate: 24000,
+          latencyHint: 'interactive',
+        };
+        const audioContext = new AudioContext(option);
+
+        // 先載入 AudioWorkletProcessor
+        await audioContext.audioWorklet.addModule('audio-worklet.js');
+
+        // 創建 AudioWorkletNode
+        const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+
+        // 連接到輸出
+        workletNode.connect(audioContext.destination);
+
+        return {
+          audioContext,
+          workletNode
+        };
+      }
+
+      async function restartAudioWorklet() {
+        console.log("重新啟動 AudioWorklet...");
+        if (workletNodeRef.current) {
+          workletNodeRef.current.disconnect();
+          workletNodeRef.current = null;
+        }
+
+        await setupAudioWorklet().then(({
+          audioContext,
+          workletNode
+        }) => {
+          console.log("AudioWorklet 已啟動");
+          audioContextRef.current = audioContext;
+          workletNodeRef.current = workletNode;
+        });
+      }
+
+      const enqueueAudioData = (workletNode, audioData) => {
+        //console.log({workletNode});
+        workletNode.port.postMessage(audioData);
+      }
+
+      React.useEffect(() => {
+        const fetchModels = async () => {
+          try {
+            // Use /text/models endpoint which returns full modality data
+            const headers = {};
+            if (apiKey) {
+              headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+            const response = await fetch('https://gen.pollinations.ai/text/models', {
+              headers: headers
+            });
+            const modelList = await response.json();
+
+            // Format models from /text/models API response
+            // This endpoint returns complete modality information
+            const formattedModels = modelList.map(model => {
+              const audioCapability = model.output_modalities
+                ? model.output_modalities.includes('audio')
+                : false;
+
+              const visionCapability = model.input_modalities
+                ? model.input_modalities.includes('image')
+                : false;
+
+              return {
+                id: model.name,
+                name: model.name,
+                description: model.description || '',
+                vision: visionCapability,
+                audio: audioCapability,
+                input_modalities: model.input_modalities || ['text'],
+                output_modalities: model.output_modalities || ['text'],
+                voices: model.voices || [],
+                pricing: model.pricing || null,
+                aliases: model.aliases || []
+              };
+            });
+
+            const defaultModels = [{
+              id: 'default',
+              name: 'default',
+              description: ''
+            }];
+            const loadedModels = formattedModels.filter(model =>
+              !defaultModels.some(def => def.id === model.id));
+
+            const combinedModels = loadedModels.length > 0 ?
+              [
+                ...formattedModels.filter(model =>
+                  !defaultModels.some(def => def.id === model.id))
+              ] : [...defaultModels];
+
+            setModels(combinedModels);
+
+            // Filter models based on current tab
+            const filteredModels = filterModelsByTab(combinedModels, activeTab);
+
+            // Set model to first filtered model or default
+            if (filteredModels.length > 0) {
+              const lastSelected = lastSelectedModels[activeTab];
+              if (lastSelected && filteredModels.some(m => m.name === lastSelected)) {
+                setModel(lastSelected);
+              } else {
+                setModel(filteredModels[0].name || 'default');
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching models:', error);
+            const defaultModels = [{
+              id: 'default',
+              name: 'Default Model'
+            }];
+            setModels(defaultModels);
+            setModel(defaultModels[0].name);
+          }
+        };
+
+        console.log(activeTab);
+        fetchModels();
+      }, [activeTab, apiKey]); // Add activeTab and apiKey as dependencies
+
+      // When activeTab or voiceToAudio changes, re-filter models and set default
+      React.useEffect(() => {
+        const filteredModels = getFilteredModels();
+
+        if (filteredModels.length > 0) {
+          const currentModelIsValid = filteredModels.some(m => m.name === model);
+          if (currentModelIsValid) {
+              return; // Keep current selection if valid
+          }
+
+          const lastSelected = lastSelectedModels[activeTab];
+          if (lastSelected && filteredModels.some(m => m.name === lastSelected)) {
+            setModel(lastSelected);
+          } else {
+            setModel(filteredModels[0].name || 'default');
+          }
+        }
+      }, [activeTab, models, voiceToAudio, getFilteredModels]);
+
+      React.useEffect(() => {
+        console.log('audioURL = ' + audioURL);
+        // Reload audio
+        if (audioPlayerRef) {
+          //audioPlayerRef.load();
+          //audioPlayerRef.play();
+        }
+      }, [audioURL])
+
+      React.useEffect(() => {
+        try {
+          localStorage.setItem('lastSelectedModels', JSON.stringify(lastSelectedModels));
+        } catch (error) {
+          console.error('Error writing to localStorage', error);
+        }
+      }, [lastSelectedModels]);
+
+      // Auto-disable audio response if selected model doesn't support audio output
+      React.useEffect(() => {
+        const currentModel = models.find(m => m.name === model);
+        if (voiceToAudio && currentModel && !currentModel.audio) {
+          setVoiceToAudio(false);
+        }
+      }, [model, models, voiceToAudio]);
+
+      const startAudioRecording = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false
+          });
+          const audioContext = new(window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 44100
+          });
+          const mediaRecorder = new MediaRecorder(stream, {
+            mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
+          });
+
+          const chunks = [];
+          mediaRecorder.ondataavailable = (e) => {
+            chunks.push(e.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(chunks, {
+              type: 'audio/webm'
+            });
+
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            const wavBlob = await convertToWav(audioBuffer);
+            const base64str = await blobToBase64(wavBlob);
+
+            window.recordedAudioBase64 = base64str;
+
+            startSpeechRecognition();
+          };
+
+          mediaRecorder.start();
+          setAudioRecorder(mediaRecorder);
+          setAudioChunks([]);
+          setIsListening(true);
+        } catch (error) {
+          console.error('Error starting audio recording:', error);
+          if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            alert('Microphone permission was denied. Please allow microphone access to use this feature.');
+          } else if (error.name === 'NotFoundError') {
+            alert('No microphone found. Please ensure your device has a working microphone.');
+          } else if (error.name === 'NotSupportedError') {
+            alert('Audio recording is not supported on this browser or device.');
+          } else {
+            alert('Could not start audio recording: ' + error.message);
+          }
+        }
+      };
+
+      const convertToWav = async (audioBuffer) => {
+        return new Promise((resolve, reject) => {
+          try {
+
+            const worker = new Worker('wav-worker.js');
+            worker.onmessage = (e) => {
+              if (e.data.type === 'wav') {
+                resolve(new Blob([e.data.wav], {
+                  type: 'audio/wav'
+                }));
+              }
+            };
+            worker.onerror = reject;
+
+            const channelData = [];
+            for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+              channelData.push(audioBuffer.getChannelData(i));
+            }
+
+            worker.postMessage({
+              type: 'convert',
+              channelData: channelData,
+              sampleRate: audioBuffer.sampleRate,
+              numberOfChannels: audioBuffer.numberOfChannels,
+              length: audioBuffer.length
+            }, channelData.map(data => data.buffer));
+          } catch (error) {
+            console.error("Error in convertToWav:", error);
+            reject(error);
+          }
+        });
+      };
+
+      const stopAudioRecording = () => {
+        if (audioRecorder) {
+          audioRecorder.stop();
+          setIsListening(false);
+        }
+      };
+
+      const startSpeechRecognition = async () => {
+        if (speechMethod === 'webkit') {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRecognition) {
+            console.error('Speech recognition not supported');
+            return null;
+          }
+          const recognitionInstance = new SpeechRecognition();
+          recognitionInstance.continuous = false;
+          recognitionInstance.interimResults = false;
+          recognitionInstance.lang = speechLanguage;
+
+          recognitionInstance.onresult = (event) => {
+            setIsListening(false);
+            const transcript = event.results[0][0].transcript;
+            setPrompt(transcript);
+          };
+
+          recognitionInstance.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            setIsListening(false);
+          };
+
+          recognitionInstance.onend = () => {
+            setIsListening(false);
+          };
+
+          setIsListening(true);
+          recognitionInstance.start();
+        } else {
+          setLoading(true);
+
+          try {
+            if (!window.recordedAudioBase64) {
+              console.error('No recorded audio found');
+              alert('Please record audio first');
+              setLoading(false);
+              return;
+            }
+
+            //console.log('Sending audio to Pollinations, base64 length:', window.recordedAudioBase64.length);
+
+            await generateAudio();
+          } catch (error) {
+            console.error('Detailed error with Pollinations speech-to-text:', error);
+            setSpeechOutputText('Error processing speech-to-text');
+          } finally {
+            setLoading(false);
+            setIsListening(false);
+          }
+        }
+      };
+
+      const stopSpeechRecognition = () => {
+        if (speechMethod === 'webkit' && window.recognition) {
+          window.recognition.stop();
+        }
+        setIsListening(false);
+      };
+
+      const sendRequest = () => {
+        generateAudio();
+      };
+
+      const handleSendTextOnlyAudioRequest = () => {
+        window.recordedAudioBase64 = null;
+        generateAudio();
+      }
+
+      const generateTTS = async () => {
+        setLoading(true);
+        setAudioURL(null);
+        setResult('');
+
+        try {
+          const headers = {
+            'Content-Type': 'application/json'
+          };
+          if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+          }
+
+          const response = await fetch('https://gen.pollinations.ai/v1/audio/speech', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+              model: ttsModel,
+              input: prompt,
+              voice: voiceOption,
+              response_format: ttsFormat,
+              speed: ttsSpeed
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(JSON.stringify(errorData));
+          }
+
+          // Get the audio blob
+          const audioBlob = await response.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+          setAudioURL(audioUrl);
+          setResult(`✅ Audio generated successfully! Format: ${ttsFormat}, Voice: ${voiceOption}, Speed: ${ttsSpeed}x`);
+        } catch (error) {
+          console.error('Error generating TTS:', error);
+          setResult('Error generating audio: ' + error.message);
+        }
+        setLoading(false);
+      };
+
+      const combinedChunk = (chunk) => {
+        let completedSSE = '';
+        combinedLine = combinedLine + chunk;
+        while (combinedLine.length > 0 && combinedLine.indexOf("\n\n") > 0) { // SSE end
+          const index = combinedLine.indexOf("\n\n");
+          completedSSE = completedSSE + combinedLine.slice(0, index) + '\n';
+          combinedLine = combinedLine.slice(index + 2);
+          continue;
+        }
+        return completedSSE;
+      }
+
+      const generateText = async () => {
+        // This function will be deprecated in favor of generateAudio
+        await generateAudio();
+      };
+
+      const generateWithImage = async (imageUrl) => {
+        // This function will be deprecated in favor of generateAudio
+        await generateAudio();
+      };
+
+      const handleImageUpload = (event) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const reader = new FileReader();
+
+          reader.onload = (e) => {
+            setUploadedImages(prev => [...prev, {
+              id: Date.now() + i,
+              name: file.name,
+              dataUrl: e.target.result
+            }]);
+          };
+
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleImagePaste = (event) => {
+        const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+
+        for (const item of items) {
+          if (item.type.indexOf('image') === 0) {
+            const blob = item.getAsFile();
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+              setUploadedImages(prev => [...prev, {
+                id: Date.now(),
+                name: 'Pasted image',
+                dataUrl: e.target.result
+              }]);
+            };
+
+            reader.readAsDataURL(blob);
+          }
+        }
+      };
+
+      const removeImage = (id) => {
+        setUploadedImages(prev => prev.filter(img => img.id !== id));
+      };
+
+      const generateAudio = async () => {
+
+        const seed = Math.floor(Math.random() * 65535);
+        
+        // Determine if there is audio input
+        const inputAudio = useAudioInput && window.recordedAudioBase64 != null && (activeTab === 'speech');
+        const outputAudio = voiceToAudio;
+
+        setOutput('');
+        setLoading(true);
+        setAudioChunks([]);
+        if (outputAudio) {
+            setAudioURL(null);
+        }
+
+        try {
+          // Create messages with history if memory is enabled
+          let messages = [];
+
+          // Create content array based on active tab
+          let content = [{
+            type: "text",
+            text: prompt
+          }];
+
+          if (activeTab === 'vision') {
+            // Add main image URL if provided
+            if (imageUrl) {
+              content.push({
+                type: "image_url",
+                image_url: {
+                  url: imageUrl
+                }
+              });
+            }
+            // Add all uploaded images
+            uploadedImages.forEach(img => {
+              content.push({
+                type: "image_url",
+                image_url: {
+                  url: img.dataUrl
+                }
+              });
+            });
+          }
+
+          if (inputAudio) {
+            content.push({
+              type: "input_audio",
+              input_audio: {
+                data: window.recordedAudioBase64,
+                format: "wav"
+              }
+            });
+          }
+
+          let newMessage = {
+            role: "user",
+            content: content
+          }
+          if (enableMemory && chatHistory.length > 0) {
+            messages = [...chatHistory, newMessage];
+          } else {
+            messages = [newMessage];
+          }
+
+          let bodyData = {
+              messages: messages,
+              model: model,
+              stream: isStreaming,
+              seed: seed
+          };
+
+          // Add system prompt as a system message (OpenAI-compatible format)
+          if (systemPrompt) {
+            bodyData.messages = [
+              { role: "system", content: systemPrompt },
+              ...messages
+            ];
+          }
+
+          // The openai-audio model requires modalities parameter when using audio
+          // Add modalities based on whether we have audio input/output
+          if (inputAudio || outputAudio) {
+            // If we want audio output, include it in modalities
+            if (outputAudio) {
+              bodyData.modalities = ["text", "audio"];
+              bodyData.audio = {
+                voice: voiceOption,
+                format: "pcm16"
+              };
+            } else {
+              // Audio input only (speech-to-text) - output is text only
+              bodyData.modalities = ["text"];
+            }
+          }
+
+          // Streaming audio generation using new API
+          const headers = {
+            'Content-Type': 'application/json'
+          };
+          if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+          }
+          const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(bodyData)
+          });
+
+          // Process audio chunks
+          console.log({
+            response
+          });
+
+          if (outputAudio && useMediaSource && window.MediaSource) {
+
+            //checkMIMECodec();
+            const mimeCodec = 'audio/mpeg';
+            const audioElement = document.createElement("audio");
+
+            let firstChunkAppended = false;
+
+            mediaSource = new MediaSource();
+            setAudioURL(URL.createObjectURL(mediaSource));
+
+            audioElement.controls = true;
+            audioElement.src = URL.createObjectURL(mediaSource);
+            document.body.appendChild(audioElement);
+
+            mediaSource.addEventListener('sourceopen', () => {
+              if (MediaSource.isTypeSupported(mimeCodec)) {
+                sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+              } else {
+                console.error("MIME type not supported:", mimeCodec);
+              }
+              console.log('source open');
+
+              sourceBuffer.addEventListener('updateend', () => {
+                if (!firstChunkAppended) {
+                  firstChunkAppended = true;
+                  audioElement.play().catch(err => {
+                    console.error("音頻播放失敗:", err);
+                  });
+                }
+              });
+            });
+          }
+          if (outputAudio && useWebAudioScriptProcessor) {}
+          if (outputAudio && useWebAudioAudioWorklet) {
+            await restartAudioWorklet();
+          }
+
+          combinedLine = '';
+          let localAudioChunks = [];
+          // Read the stream
+          const useStreaming = isStreaming;
+          if (!useStreaming) {
+            if (outputAudio) {
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder();
+
+              let totalBuffer = [];
+              while (true) {
+                const {
+                  done,
+                  value
+                } = await reader.read();
+                //console.log({value});
+                if (!value) break;
+                if (done) break;
+                // append audio bytes
+                totalBuffer = [...totalBuffer, ...value];
+              }
+              //console.log({totalBuffer});
+              const audioBytes = new Uint8Array(totalBuffer);
+
+              // Add to audio chunks array
+              setAudioChunks(prevChunks => [...prevChunks, audioBytes]);
+
+
+              if (outputAudio && useBlobMethod) {
+                localAudioChunks = [...localAudioChunks, audioBytes];
+              }
+              // If MediaSource is supported, append to source buffer
+              if (outputAudio && useMediaSource && mediaSource) {
+                appendAudioChunk(audioBytes);
+              }
+
+              // 轉換 PCM16 → Float32
+              if (outputAudio && useWebAudioScriptProcessor) {
+                const floatData = convertPCM16ToFloat32(audioBytes, 24000);
+                bufferQueue.current.push(floatData);
+              }
+              if (outputAudio && useWebAudioAudioWorklet) {
+                const floatData = convertPCM16ToFloat32(audioBytes, 24000);
+                enqueueAudioData(workletNodeRef.current, floatData);
+              }
+            } else {
+              const rawData = await response.text();
+              try {
+                const parsedData = JSON.parse(rawData);
+                if (parsedData.choices && parsedData.choices[0] && parsedData.choices[0].message) {
+                  // Check for reasoning_content if content is null
+                  setOutput(parsedData.choices[0].message.content || parsedData.choices[0].message.reasoning_content);
+                } else {
+                  setOutput(JSON.stringify(parsedData, null, 2)); // Fallback to raw JSON if structure is unexpected
+                }
+              } catch (jsonError) {
+                // If not JSON, use the raw text
+                setOutput(rawData);
+              }
+            }
+          } else {
+            // Streaming
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            while (true) {
+              const {
+                done,
+                value
+              } = await reader.read();
+              //console.log({value});
+              if (done) break;
+
+              const chunk = decoder.decode(value, {
+                stream: isStreaming
+              });
+              //console.log({chunk});
+
+              // Combine chunks
+              let completedSSE = combinedChunk(chunk);
+
+              //console.log({completedSSE});
+
+              // Process SSE format
+              const lines = completedSSE.split("\n").filter(line => line.startsWith("data: "));
+
+              for (const line of lines) {
+                try {
+                  const jsonString = line.replace("data: ", "").trim();
+
+                  //console.log({line});
+                  if (jsonString === "[DONE]") continue;
+
+                  const parsedChunk = JSON.parse(jsonString);
+                  //console.log(parsedChunk);
+
+                  if (parsedChunk && parsedChunk.choices && parsedChunk.choices[0] && parsedChunk.choices[0].delta && parsedChunk.choices[0].delta.audio) {
+                    //console.log(parsedChunk.choices[0]);
+                    // Handle audio data from delta format
+                    const audioData = parsedChunk.choices[0].delta.audio.data;
+                    if (audioData) {
+                      //console.log({ audioData });
+
+                      // Decode base64 audio chunk
+                      const binaryData = atob(audioData);
+                      const arrayBuffer = new ArrayBuffer(binaryData.length);
+                      const audioBytes = new Uint8Array(arrayBuffer);
+                      for (let i = 0; i < binaryData.length; i++) {
+                        audioBytes[i] = binaryData.charCodeAt(i);
+                      }
+                      //const audioBytes = new Uint8Array(atob(audioData).split('').map(c => c.charCodeAt(0)));
+                      //console.log(audioBytes);
+
+                      // Add to audio chunks array
+                      setAudioChunks(prevChunks => [...prevChunks, audioBytes]);
+
+                      if (outputAudio && useBlobMethod) {
+                        localAudioChunks = [...localAudioChunks, audioBytes];
+                      }
+                      // If MediaSource is supported, append to source buffer
+                      if (outputAudio && useMediaSource && mediaSource) {
+                        //appendAudioChunk(audioBytes);
+                      }
+
+                      // 轉換 PCM16 → Float32
+                      if (outputAudio && useWebAudioScriptProcessor) {
+                        const floatData = convertPCM16ToFloat32(audioBytes, 24000);
+                        bufferQueue.current.push(floatData);
+                      }
+                      if (outputAudio && useWebAudioAudioWorklet) {
+                        const floatData = convertPCM16ToFloat32(audioBytes, 24000);
+                        enqueueAudioData(workletNodeRef.current, floatData);
+                      }
+                    }
+
+                    // Update text result if transcript is available
+                    if (parsedChunk.choices[0].delta.audio.transcript) {
+                      appendOutput(parsedChunk.choices[0].delta.audio.transcript);
+                    }
+                  } else if (parsedChunk && parsedChunk.choices && parsedChunk.choices[0] && parsedChunk.choices[0].delta) {
+                    // Also check for reasoning_content if content is null
+                    const content = parsedChunk.choices[0].delta.content || parsedChunk.choices[0].delta.reasoning_content || "";
+                    if (content) {
+                      appendOutput(content);
+                    }
+                  } else if (parsedChunk && parsedChunk.audio) {
+                    // Handle legacy format for backward compatibility
+                    const audioData = `data:audio/mp3;base64,${parsedChunk.audio}`;
+                    appendOutput(`<audio controls src="${audioData}"></audio>`);
+                    setAudioURL(audioData);
+
+                    // Update text result if available
+                    if (parsedChunk.text) {
+                      appendOutput(parsedChunk.text);
+                    }
+                  }
+                } catch (error) {
+                  console.error("JSON parsing error:", error);
+                  //console.error(line);
+                }
+              }
+            } // end while
+          }
+          // If MediaSource is not supported or failed, create a single audio file from chunks
+          if (outputAudio && useBlobMethod) {
+            console.log('Blob method');
+
+            // Combine all audio chunks into a single Uint8Array
+            let combinedChunks = new Uint8Array(localAudioChunks.reduce((acc, chunk) => acc + chunk.length, 0));
+            let offset = 0;
+            for (const chunk of localAudioChunks) {
+              combinedChunks.set(chunk, offset);
+              offset += chunk.length;
+            }
+
+            //console.log({localAudioChunks});
+
+            // Convert to WAV format
+            const wavData = bufferToWav(combinedChunks);
+            const audioBlob = new Blob([wavData], {
+              type: 'audio/wav'
+            });
+            const url = URL.createObjectURL(audioBlob);
+
+            // Add audio and play
+            setAudioURL(url);
+
+            // Trigger download
+            //const link = document.createElement("a");
+            //link.href = url;
+            //link.download = "audio.wav";
+            //link.click();
+            //URL.revokeObjectURL(url);
+          }
+          // Close MediaSource when done
+          if (outputAudio && useMediaSource && mediaSource) {
+            //if (mediaSource && mediaSource.readyState === 'open' && sourceBuffer.updating === false) {
+            //    mediaSource.endOfStream();
+            //}
+            //endStream();
+          }
+          if (outputAudio && useWebAudioScriptProcessor) {}
+          if (outputAudio && useWebAudioAudioWorklet) {
+
+            if (!workletNodeRef.current) return;
+            console.log("發送停止指令給 AudioWorklet");
+            workletNodeRef.current.port.postMessage("STOP");
+          }
+        } catch (error) {
+          console.error('Error generating audio:', error);
+          setOutput('Error generating audio: ' + error.message);
+        }
+        setLoading(false);
+
+        // Save to chat history if memory is enabled
+        if (enableMemory) {
+          setChatHistory(prev => [
+            ...prev, {
+              role: 'user',
+              content: prompt
+            }, {
+              role: 'assistant',
+              content: getOutput()
+            }
+          ]);
+        }
+      };
+
+      const blobToBase64 = (blob) => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve(reader.result.split(',')[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      };
+
+      const handleMemoryToggle = () => {
+        if (enableMemory) {
+          // Currently enabled, about to disable
+          if (chatHistory.length > 0 && window.confirm("Do you want to clear your chat memory?")) {
+            setChatHistory([]);
+          }
+          setEnableMemory(false);
+        } else {
+          // Currently disabled, about to enable
+          setEnableMemory(true);
+        }
+      };
+
+      function writeString(view, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i));
+        }
+      }
+
+      const bufferToWav = (combinedChunks) => {
+        console.log({
+          combinedChunks
+        });
+
+        const sampleRate = 24000; // OpenAI 音訊標準採樣率
+        const numChannels = 1; // 單聲道
+        const bitsPerSample = 16; // PCM16
+
+        // 確保 PCM 數據長度是 2 的倍數，避免丟失最後 1 byte
+        if (combinedChunks.length % 2 !== 0) {
+          console.warn("combinedChunks length is not aligned to 16-bit samples, trimming last byte.");
+          combinedChunks = combinedChunks.slice(0, combinedChunks.length - 1);
+        }
+
+        // 計算總樣本數
+        const sampleSize = bitsPerSample / 8; // 每個樣本的大小
+        const expectedSamples = combinedChunks.length / sampleSize; // 16-bit PCM，每個 sample 佔 2 bytes
+        const remainder = expectedSamples % sampleRate; // 確保長度可以被 sampleRate 整除
+        const missingSamples = (sampleRate - remainder) % sampleRate; // 需要補充的 samples
+
+        // 計算 padding 大小
+        let paddingSize = missingSamples * numChannels * sampleSize;
+        console.log(`Padding samples: ${missingSamples}, Padding bytes: ${paddingSize}`);
+
+        // 添加 padding
+        const padding = new Uint8Array(paddingSize);
+        const paddedData = new Uint8Array(combinedChunks.length + paddingSize);
+        paddedData.set(combinedChunks, 0);
+        paddedData.set(padding, combinedChunks.length);
+
+        // 建立 WAV Header
+        const headerSize = 44;
+        const dataSize = paddedData.length;
+        const totalSize = headerSize + dataSize;
+
+        const header = new ArrayBuffer(headerSize);
+        const headerView = new DataView(header);
+
+        writeString(headerView, 0, 'RIFF');
+        headerView.setUint32(4, totalSize - 8, true);
+        writeString(headerView, 8, 'WAVE');
+        writeString(headerView, 12, 'fmt ');
+        headerView.setUint32(16, 16, true); // Subchunk1Size
+        headerView.setUint16(20, 1, true); // AudioFormat (PCM)
+        headerView.setUint16(22, numChannels, true); // NumChannels
+        headerView.setUint32(24, sampleRate, true); // SampleRate
+        headerView.setUint32(28, sampleRate * numChannels * sampleSize, true); // ByteRate
+        headerView.setUint16(32, numChannels * sampleSize, true); // BlockAlign
+        headerView.setUint16(34, bitsPerSample, true); // BitsPerSample
+        writeString(headerView, 36, 'data');
+        headerView.setUint32(40, dataSize, true); // Subchunk2Size
+
+        // 合併 Header 和音訊數據
+        const wavData = new Uint8Array(totalSize);
+        wavData.set(new Uint8Array(header), 0);
+        wavData.set(paddedData, headerSize);
+        return wavData;
+      }
+
+      function resampleFloat32(inputArray, originalRate, targetRate) {
+        if (originalRate === targetRate) return inputArray; // 
+
+        console.log("Resampling from", originalRate, "to", targetRate);
+
+        const ratio = targetRate / originalRate;
+        const newLength = Math.round(inputArray.length * ratio);
+        const outputArray = new Float32Array(newLength);
+
+        for (let i = 0; i < newLength; i++) {
+          const srcIndex = i / ratio;
+          const index0 = Math.floor(srcIndex);
+          const index1 = Math.min(index0 + 1, inputArray.length - 1);
+          const t = srcIndex - index0;
+          outputArray[i] = (1 - t) * inputArray[index0] + t * inputArray[index1];
+        }
+
+        return outputArray;
+      }
+
+      function convertPCM16ToFloat32(pcmData, originalSampleRate) {
+        if (pcmData.length % 2 !== 0) {
+          console.error("Invalid PCM16 data: length is not even!", pcmData.length);
+          return new Float32Array(0);
+        }
+
+        const samples = pcmData.length / 2;
+        const float32Array = new Float32Array(samples);
+        const dataView = new DataView(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength); // 
+
+        for (let i = 0; i < samples; i++) {
+          const int16 = dataView.getInt16(i * 2, true); // Little-endian
+          float32Array[i] = int16 / 32768.0;
+        }
+        //console.log("AudioContext sample rate:", audioContextRef.current.sampleRate);
+        // 
+        let targetSampleRate = 44100;
+        if (audioContextRef.current)
+          targetSampleRate = audioContextRef.current.sampleRate;
+        return resampleFloat32(float32Array, originalSampleRate, targetSampleRate);
+      }
+
+      const setOutput = (msg) => {
+        outputText.current = msg;
+        if (isStreaming)
+          setStreamedResult(msg);
+        else
+          setResult(msg);
+      }
+      const appendOutput = (msg) => {
+        outputText.current = outputText.current + msg;
+        if (isStreaming)
+          setStreamedResult(prev => prev + msg);
+        else
+          setResult(prev => prev + msg);
+      }
+      const getOutput = () => {
+        return outputText.current;
+      }
+
+      return (
+        <div className="container mx-auto p-6" onPaste={handleImagePaste}>
+          <h1 className="text-3xl font-bold mb-6 text-center">Pollinations AI API (New gen.pollinations.ai)</h1>
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 text-center">
+            ✅ Now using the new API at <strong>gen.pollinations.ai</strong>
+          </div>
+
+          <div className="flex justify-center mb-4">
+            <button
+              className={`px-4 py-2 mx-2 ${activeTab === 'text' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={() => setActiveTab('text')}
+            >
+              Text Generation
+            </button>
+            <button
+              className={`px-4 py-2 mx-2 ${activeTab === 'vision' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={() => setActiveTab('vision')}
+            >
+              Vision
+            </button>
+            <button
+              className={`px-4 py-2 mx-2 ${activeTab === 'tts' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={() => setActiveTab('tts')}
+            >
+              Text-to-Speech
+            </button>
+            <button
+              className={`px-4 py-2 mx-2 ${activeTab === 'speech' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={() => setActiveTab('speech')}
+            >
+              Speech-to-Text
+            </button>
+          </div>
+
+          <div className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded">
+              <label className="block text-gray-700 text-sm font-bold mb-2">
+                API Key (Optional)
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter your Pollinations API key (get it at enter.pollinations.ai)"
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              />
+              <p className="text-sm text-gray-600 mt-2">
+                ℹ️ Anonymous requests still work, but an API key gives you better performance and access to all models.
+                Get your key at <a href="https://enter.pollinations.ai" target="_blank" className="text-blue-600 underline">enter.pollinations.ai</a>
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2">
+                System Prompt
+              </label>
+              <input
+                type="text"
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder="Enter system prompt"
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2">
+                Prompt
+              </label>
+              <input
+                type="text"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Enter your prompt"
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-gray-700 text-sm font-bold mb-2">
+                Model
+              </label>
+              <select
+                value={model}
+                onChange={(e) => {
+                  const newModelName = e.target.value;
+                  const targetModel = models.find((modelOption) => modelOption.name === newModelName);
+                  if (targetModel) {
+                    setModel(targetModel.name);
+                    setLastSelectedModels(prev => ({ ...prev, [activeTab]: targetModel.name }));
+                  }
+                }}
+                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                style={{
+                  maxWidth: '100%',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden'
+                }}
+              >
+                {getFilteredModels().map((modelOption) => (
+                  <option
+                    key={modelOption.id}
+                    value={modelOption.name}
+                    title={modelOption.name}
+                    className="text-base"
+                  >
+                    {modelOption.name + " - " + modelOption.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-4 flex items-center">
+              <label className="mr-4">
+                <input
+                  type="checkbox"
+                  checked={isStreaming}
+                  onChange={() => setIsStreaming(!isStreaming)}
+                  className="mr-2"
+                />
+                Enable Streaming
+              </label>
+              <label className="mr-4">
+                <input
+                  type="checkbox"
+                  checked={enableMemory}
+                  onChange={handleMemoryToggle}
+                  className="mr-2"
+                />
+                Enable Chat Memory
+              </label>
+              <label className="mr-4">
+                <input
+                  type="checkbox"
+                  checked={showMarkdown}
+                  onChange={() => setShowMarkdown(!showMarkdown)}
+                  className="mr-2"
+                />
+                Render Markdown
+              </label>
+            </div>
+
+            <div className="mb-4 p-4 border rounded bg-gray-50">
+                <div className="flex items-center">
+                    {(() => {
+                      const currentModel = models.find(m => m.name === model);
+                      const hasAudio = currentModel && currentModel.audio;
+                      return (
+                        <React.Fragment>
+                          <label className={`inline-flex items-center mr-4 ${!hasAudio ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                              <input
+                              type="checkbox"
+                              checked={voiceToAudio}
+                              disabled={!hasAudio}
+                              onChange={() => setVoiceToAudio(!voiceToAudio)}
+                              className="mr-2"
+                              />
+                              <span>Generate audio response</span>
+                          </label>
+                          {voiceToAudio && hasAudio && (
+                        <div className="flex items-center">
+                            <label className="block text-gray-700 text-sm font-bold mr-2">
+                                Voice:
+                            </label>
+                            <select
+                                value={voiceOption}
+                                onChange={(e) => setVoiceOption(e.target.value)}
+                                className="shadow-sm appearance-none border rounded py-1 px-2 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                            >
+                                <option value="alloy">Alloy</option>
+                                <option value="echo">Echo</option>
+                                <option value="fable">Fable</option>
+                                <option value="onyx">Onyx</option>
+                                <option value="nova">Nova</option>
+                                <option value="shimmer">Shimmer</option>
+                                <option value="coral">Coral</option>
+                                <option value="verse">Verse</option>
+                                <option value="ballad">Ballad</option>
+                                <option value="ash">Ash</option>
+                                <option value="sage">Sage</option>
+                                <option value="amuch">Amuch</option>
+                                <option value="dan">Dan</option>
+                            </select>
+                        </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })()}
+                </div>
+                {(() => {
+                  const currentModel = models.find(m => m.name === model);
+                  const hasAudio = currentModel && currentModel.audio;
+                  return !hasAudio ? (
+                    <p className="text-sm text-gray-600 mt-2 bg-blue-50 p-2 rounded">
+                      ℹ️ Audio output is only available with audio-capable models like <strong>openai-audio</strong>.
+                      Select an audio-capable model to enable this feature.
+                    </p>
+                  ) : null;
+                })()}
+            </div>
+
+            {activeTab === 'text' && (
+              <button
+                onClick={sendRequest}
+                disabled={loading}
+                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              >
+                {loading ? 'Generating...' : 'Generate'}
+              </button>
+            )}
+
+            {activeTab === 'vision' && (
+              <div>
+                <input
+                  type="text"
+                  placeholder="Image URL (optional)"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mb-4"
+                />
+
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Upload Images
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="block w-full text-gray-700 py-2"
+                  />
+                  <div className="mt-2 text-sm text-gray-600">
+                    You can also paste images with Ctrl+V/Cmd+V
+                  </div>
+                </div>
+
+                {uploadedImages.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex flex-wrap gap-2">
+                      {uploadedImages.map(img => (
+                        <div key={img.id} className="relative">
+                          <img
+                            src={img.dataUrl}
+                            alt={img.name}
+                            className="h-24 w-auto object-cover border rounded"
+                          />
+                          <button
+                            onClick={() => removeImage(img.id)}
+                            className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={sendRequest}
+                  disabled={loading || (imageUrl === '' && uploadedImages.length === 0)}
+                  className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                >
+                  {loading ? 'Analyzing...' : 'Analyze Images'}
+                </button>
+              </div>
+            )}
+
+            {activeTab === 'tts' && (
+              <div>
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Voice
+                  </label>
+                  <select
+                    value={voiceOption}
+                    onChange={(e) => setVoiceOption(e.target.value)}
+                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  >
+                    <option value="alloy">Alloy</option>
+                    <option value="echo">Echo</option>
+                    <option value="fable">Fable</option>
+                    <option value="onyx">Onyx</option>
+                    <option value="nova">Nova</option>
+                    <option value="shimmer">Shimmer</option>
+                    <option value="coral">Coral</option>
+                    <option value="verse">Verse</option>
+                    <option value="ballad">Ballad</option>
+                    <option value="ash">Ash</option>
+                    <option value="sage">Sage</option>
+                  </select>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Audio Format
+                  </label>
+                  <select
+                    value={ttsFormat}
+                    onChange={(e) => setTtsFormat(e.target.value)}
+                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  >
+                    <option value="mp3">MP3</option>
+                    <option value="wav">WAV</option>
+                    <option value="opus">Opus</option>
+                    <option value="aac">AAC</option>
+                    <option value="flac">FLAC</option>
+                    <option value="pcm">PCM</option>
+                  </select>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Speed: {ttsSpeed}x
+                  </label>
+                  <input
+                    type="range"
+                    min="0.25"
+                    max="4"
+                    step="0.25"
+                    value={ttsSpeed}
+                    onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>0.25x</span>
+                    <span>4x</span>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Model
+                  </label>
+                  <select
+                    value={ttsModel}
+                    onChange={(e) => setTtsModel(e.target.value)}
+                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  >
+                    <option value="tts-1">TTS-1 (Standard)</option>
+                    <option value="tts-1-hd">TTS-1 HD (High Quality)</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={generateTTS}
+                  disabled={loading || !prompt}
+                  className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                >
+                  {loading ? 'Generating Audio...' : 'Generate Speech'}
+                </button>
+              </div>
+            )}
+
+            {(activeTab === 'audio' || activeTab === 'speech') && (
+              <div>
+                <div className="mb-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={useAudioInput}
+                      onChange={() => setUseAudioInput(!useAudioInput)}
+                      className="mr-2"
+                    />
+                    <span>Use audio input</span>
+                  </label>
+                </div>
+                
+                {activeTab === 'audio' && (
+                  <button
+                    onClick={sendRequest}
+                    disabled={loading}
+                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                  >
+                    {loading ? 'Generating...' : 'Generate Audio'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'speech' && (
+              <div className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+                {useAudioInput && (
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Speech Recognition Method
+                  </label>
+                  <div className="flex items-center">
+                    <label className="inline-flex items-center mr-4">
+                      <input
+                        type="radio"
+                        value="webkit"
+                        checked={speechMethod === 'webkit'}
+                        onChange={() => setSpeechMethod('webkit')}
+                        className="form-radio"
+                      />
+                      <span className="ml-2">WebKit (Browser Native)</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                      <input
+                        type="radio"
+                        value="pollinations"
+                        checked={speechMethod === 'pollinations'}
+                        onChange={() => setSpeechMethod('pollinations')}
+                        className="form-radio"
+                      />
+                      <span className="ml-2">Pollinations.ai</span>
+                    </label>
+                  </div>
+                </div>
+                )}
+
+                {speechMethod === 'webkit' && useAudioInput && (
+                  <div className="mb-4">
+                    <label className="block text-gray-700 text-sm font-bold mb-2">
+                      Speech Language
+                    </label>
+                    <select
+                      value={speechLanguage}
+                      onChange={(e) => setSpeechLanguage(e.target.value)}
+                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                    >
+                      <option value="en-US">English (US)</option>
+                      <option value="es-ES">Spanish (Spain)</option>
+                      <option value="fr-FR">French (France)</option>
+                      <option value="de-DE">German (Germany)</option>
+                      <option value="it-IT">Italian (Italy)</option>
+                      <option value="ja-JP">Japanese</option>
+                      <option value="zh-CN">Chinese (Simplified)</option>
+                      <option value="ar-SA">Arabic (Saudi Arabia)</option>
+                      <option value="hi-IN">Hindi (India)</option>
+                      <option value="pt-BR">Portuguese (Brazil)</option>
+                    </select>
+                  </div>
+                )}
+
+                {speechMethod === 'pollinations' && useAudioInput && (
+                  <div className="flex space-x-4 mb-4">
+                    {!isListening && (
+                      <button
+                        onClick={startAudioRecording}
+                        disabled={isListening}
+                        className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                      >
+                        {!loading ? 'Start Recording' : 'Generating...'}
+                      </button>
+                    )}
+                    {isListening && (
+                      <button
+                        onClick={stopAudioRecording}
+                        className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                      >
+                        Stop & Transcribe
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!useAudioInput && (
+                  <div className="flex space-x-4 mb-4">
+                    <button
+                      onClick={handleSendTextOnlyAudioRequest}
+                      disabled={loading}
+                      className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    >
+                      {loading ? 'Generating...' : 'Send'}
+                    </button>
+                  </div>
+                )}
+                {speechMethod === 'webkit' && useAudioInput && (
+                  <div className="flex space-x-4 mb-4">
+                    <button
+                      onClick={startSpeechRecognition}
+                      disabled={isListening}
+                      className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    >
+                      {isListening ? 'Listening...' : 'Start WebKit Speech Input'}
+                    </button>
+                    {isListening && (
+                      <button
+                        onClick={stopSpeechRecognition}
+                        className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                      >
+                        Stop Listening
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {audioURL && (
+              <div className="mt-4">
+                <audio
+                  controls
+                  src={audioURL}
+                  ref={ref => setAudioPlayerRef(ref)}
+                  className="w-full"
+                />
+              </div>
+            )}
+
+            {result && !isStreaming && (
+              <div className="mt-4 p-4 bg-gray-100 rounded">
+                {result.startsWith('<audio') ? (
+                  <div dangerouslySetInnerHTML={{ __html: result }}></div>
+                ) : showMarkdown ? (
+                  <div className="markdown-content" dangerouslySetInnerHTML={{ __html: marked.parse(result) }}></div>
+                ) : (
+                  <pre className="whitespace-pre-wrap">{result}</pre>
+                )}
+              </div>
+            )}
+
+            {streamedResult && isStreaming && (
+              <div className="mt-4 p-4 bg-gray-100 rounded">
+                {showMarkdown ? (
+                  <div className="markdown-content" dangerouslySetInnerHTML={{ __html: marked.parse(streamedResult) }}></div>
+                ) : (
+                  <pre className="whitespace-pre-wrap">{streamedResult}</pre>
+                )}
+              </div>
+            )}
+          </div>
+
+          {enableMemory && (
+            <div className="mt-6">
+              <h2 className="text-xl font-semibold mb-4">Chat History</h2>
+              <div className="bg-gray-100 p-4 rounded">
+                {chatHistory.length > 0 ? (
+                  <ul className="list-disc list-inside">
+                    {chatHistory.map((entry, index) => (
+                      <li key={index} className="mb-2">
+                        <strong>({index}) {entry.role === 'user' ? 'User' : 'Assistant'}:</strong> {entry.content}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-600">No chat history available.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 text-center">
+            <h2 className="text-xl font-semibold mb-4">API Capabilities</h2>
+            <ul className="list-disc list-inside">
+              <li>✅ Using new gen.pollinations.ai API</li>
+              <li>Text Generation with multiple models (OpenAI-compatible)</li>
+              <li>Image Analysis (Vision)</li>
+              <li>Text-to-Speech with multiple voices</li>
+              <li>Speech-to-Text Recognition</li>
+              <li>Streaming support</li>
+              <li>Chat memory</li>
+              <li>Optional API key authentication for better performance</li>
+            </ul>
+            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <p className="text-sm">
+                📝 <strong>Note:</strong> Get your API key at <a href="https://enter.pollinations.ai" target="_blank" className="text-blue-600 underline">enter.pollinations.ai</a> for access to all models and better performance.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+
+</html>

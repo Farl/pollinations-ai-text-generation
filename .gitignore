@@ -1,0 +1,23 @@
+# API Keys and Secrets
+config.js
+.env.local
+.env
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime
+node_modules/
