@@ -82,9 +82,67 @@ open http://localhost:8000
 - 🔐 Use publishable keys (`pk_*`) for client-side apps (rate-limited)
 - 🔒 Keep secret keys (`sk_*`) server-side only
 
+## Project Structure
+
+```
+├── src/
+│   ├── services/
+│   │   └── pollinations-api.js    # Centralized API service layer
+│   └── utils/
+│       ├── config.js               # Configuration management
+│       ├── constants.js            # Application constants
+│       └── helpers.js              # Utility functions
+├── docs/
+│   ├── CODE_REVIEW.md              # Comprehensive code review
+│   ├── REFACTORING_SUMMARY.md      # Refactoring documentation
+│   └── pollinations-ai-apidocs.md  # API documentation
+├── index.html                      # Main application
+├── audio-worklet.js                # Audio processing
+├── wav-worker.js                   # WAV encoding
+└── favicon.svg                     # Site icon
+```
+
+## Development
+
+### Code Organization
+
+The codebase has been refactored for better maintainability:
+
+- **API Service Layer** (`src/services/`): Centralized API calls with consistent error handling
+- **Utilities** (`src/utils/`): Reusable helper functions and constants
+- **Documentation** (`docs/`): Code review, refactoring notes, and API docs
+
+### For Developers
+
+See [docs/REFACTORING_SUMMARY.md](docs/REFACTORING_SUMMARY.md) for:
+- Architecture overview
+- Migration guide
+- Next steps for further refactoring
+
+See [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) for:
+- Current issues and improvements
+- Proposed refactoring strategy
+- Code quality metrics
+
 ## API Documentation
 
 Full API documentation: [docs/pollinations-ai-apidocs.md](docs/pollinations-ai-apidocs.md)
+
+## Contributing
+
+1. Follow the existing code structure
+2. Add JSDoc comments for new functions
+3. Update documentation when making changes
+4. Test thoroughly before committing
+
+## Deployment
+
+The project is configured for GitHub Pages deployment:
+- API key is injected via GitHub Actions
+- Automatic deployment on push to main branch
+- See `.github/workflows/deploy-pages.yml` for details
+
+Live site: [https://farl.github.io/pollinations-ai-text-generation/](https://farl.github.io/pollinations-ai-text-generation/)
 
 ## License
 

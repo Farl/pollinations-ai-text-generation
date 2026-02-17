@@ -1,5 +1,5 @@
 # API Keys and Secrets
-config.js
+/config.js
 .env.local
 .env
 
