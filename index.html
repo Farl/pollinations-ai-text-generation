@@ -105,6 +105,22 @@
 <body>
   <div id="root"></div>
 
+  <!-- Load refactored modules -->
+  <script type="module">
+    import * as API from './src/services/pollinations-api.js';
+    import * as Config from './src/utils/config.js';
+    import * as Helpers from './src/utils/helpers.js';
+    import Constants from './src/utils/constants.js';
+
+    // Make modules available globally for Babel script
+    window.PollinationsAPI = API;
+    window.PollinationsConfig = Config;
+    window.PollinationsHelpers = Helpers;
+    window.PollinationsConstants = Constants;
+
+    console.log('✓ Pollinations modules loaded');
+  </script>
+
   <script type="text/babel">
     const App = () => {
       // React state hooks
@@ -278,40 +294,8 @@
       React.useEffect(() => {
         const fetchModels = async () => {
           try {
-            // Use /text/models endpoint which returns full modality data
-            const headers = {};
-            if (apiKey) {
-              headers['Authorization'] = `Bearer ${apiKey}`;
-            }
-            const response = await fetch('https://gen.pollinations.ai/text/models', {
-              headers: headers
-            });
-            const modelList = await response.json();
-
-            // Format models from /text/models API response
-            // This endpoint returns complete modality information
-            const formattedModels = modelList.map(model => {
-              const audioCapability = model.output_modalities
-                ? model.output_modalities.includes('audio')
-                : false;
-
-              const visionCapability = model.input_modalities
-                ? model.input_modalities.includes('image')
-                : false;
-
-              return {
-                id: model.name,
-                name: model.name,
-                description: model.description || '',
-                vision: visionCapability,
-                audio: audioCapability,
-                input_modalities: model.input_modalities || ['text'],
-                output_modalities: model.output_modalities || ['text'],
-                voices: model.voices || [],
-                pricing: model.pricing || null,
-                aliases: model.aliases || []
-              };
-            });
+            // Use refactored API service
+            const formattedModels = await window.PollinationsAPI.fetchModels(apiKey);
 
             const defaultModels = [{
               id: 'default',
